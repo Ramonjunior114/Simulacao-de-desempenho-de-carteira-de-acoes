@@ -1,0 +1,87 @@
+#R.jr- python para mercado financeiro
+#simulacao de 10 mil carteiras com 5 acoes
+#estimar a chance probabilistica de desempenho, simulacao monte carlo 
+
+#importe as bibliotecas necessarias
+import numpy as np
+import matplotlib.pyplot as plt
+import datetime as dt
+from pandas_datareader import data as pdr
+from numpy import linalg as LA
+
+#coletando dados das acoes
+
+lista_acao = ['VALE3.SA','ITUB4.SA','BBDC3.SA','WEGE3.SA','PETR4.SA']
+
+data_final = dt.datetime.now()
+data_inicial = data_final - dt.timedelta(days=300)
+
+precos = pdr.get_data_yahoo(lista_acao,data_inicial,data_final)['Adj Close']
+
+#calculando retorno utilizando matriz 
+
+retornos = precos.pct_change().dropna()
+matriz_covariancia = retornos.cov()
+pesos_carteira = np.full(len(lista_acao),1/len(lista_acao))
+numero_acoes = len(lista_acao)
+
+#funcao monte carlo utilizando formula de opcoes sinteticas
+#opcoes sinteticas = media retornos + rpdf * L
+
+numero_simulacoes = 10000
+dias_projetados = 252*3
+capital_inicial = 1000
+
+#gerando retorno medio
+
+retorno_medio = retornos.mean(axis = 0).to_numpy()
+matriz_retorno_medio = retorno_medio * np.ones(shape = (dias_projetados, numero_acoes))
+
+#gerando L
+
+L = LA.cholesky(matriz_covariancia)
+
+#realizando simulacoes
+
+retornos_carteira = np.zeros([dias_projetados, numero_simulacoes])
+montante_final = np.zeros(numero_simulacoes)
+
+for s in range(numero_simulacoes):
+    
+    rpdf = np.random.normal(size=(dias_projetados,numero_acoes))
+    opcoes_sinteticas = matriz_retorno_medio + np.inner(rpdf,L)
+    retornos_carteira[:,s] = np.cumprod(np.inner(pesos_carteira, opcoes_sinteticas)+ 1) * capital_inicial
+    
+    montante_final[s] = retornos_carteira[-1,s]
+    
+#gerando o grafico com as simulacoes
+plt.plot(retornos_carteira,linewidth = 1)
+plt.ylabel('Dinheiro')
+plt.xlabel('Dias')    
+
+#calculando o percentual de desempenho
+montante_99 = str(np.percentile(montante_final,1))
+montante_95 = str(np.percentile(montante_final,5))
+montante_media = str(np.percentile(montante_final,50))
+cenarios_com_lucro = str((len(montante_final[montante_final > 1000])/ len(montante_final))*100)+ "%"
+
+#mostrando a legenda com os resultados obtidos
+print(f'''Investindo 1000 reais na carteira{lista_acao}, o resultado esperado para os proximos 3 anos sera:
+
+com 50% de probabilidade, o montante maior que R$ {montante_media}.
+
+com 95% de probabilidade, o montante sera maior que R$ {montante_95}.
+
+com 99% de probabilidade, o montante sera maior que R$ {montante_99}.
+
+Em {cenarios_com_lucro} dos cenarios, foi possivel obter lucro com essa carteira em 3 anos''')
+
+#Mostrando o grafico com as destribuicoes dos montantes 
+config = dict(histtype = "stepfilled", alpha = 0.8, density = False, bins = 150)
+fig, ax = plt.subplots()
+ax.hist(montante_final,**config)
+ax.xaxis.set_major_formatter('{x}')
+plt.title('Distribuicao montantes finais com simulacao MC')
+plt.xlabel('Montante final (R$)')
+plt.ylabel('Frequencia')
+plt.show()
